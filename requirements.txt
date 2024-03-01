@@ -1,0 +1,6 @@
+redis
+# "uvicorn[standard]"
+fastapi
+requests
+httpie
+serpapi
