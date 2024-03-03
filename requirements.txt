@@ -4,3 +4,6 @@ fastapi
 requests
 httpie
 serpapi
+transformers
+torch
+pillow
