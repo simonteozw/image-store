@@ -1,6 +1,14 @@
 import torch
+import numpy as np
+import requests
 from PIL import Image
+from io import BytesIO
 from transformers import CLIPProcessor, CLIPModel, CLIPTokenizer
+
+def get_image(image_URL):
+  response = requests.get(image_URL)
+  image = Image.open(BytesIO(response.content)).convert("RGB")
+  return image
 
 def get_model_info(model_ID, device):
   # Save the model to device
@@ -23,9 +31,10 @@ def get_single_text_embedding(text):
   text_embeddings = model.get_text_features(**inputs)
   # convert the embeddings to numpy array
   embedding_as_np = text_embeddings.cpu().detach().numpy()
-  return embedding_as_np
+  return embedding_as_np.astype(np.float32)[0]
 
-def get_single_image_embedding(my_image):
+def get_single_image_embedding(image_url):
+  my_image = get_image(image_url)
   image = processor(
 		text = None,
 		images = my_image,
@@ -34,4 +43,4 @@ def get_single_image_embedding(my_image):
   embedding = model.get_image_features(image)
   # convert the embeddings to numpy array
   embedding_as_np = embedding.cpu().detach().numpy()
-  return embedding_as_np
+  return embedding_as_np.astype(np.float32).tolist()[0]
