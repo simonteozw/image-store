@@ -7,3 +7,4 @@ serpapi
 transformers
 torch
 pillow
+threading

@@ -7,6 +7,7 @@ import numpy as np
 from redis.commands.search.query import Query
 from embeddings import get_model_info, get_single_text_embedding, get_single_image_embedding
 from schema import rd_schema, definition
+from threading import Thread
 
 # global constants
 INDEX_NAME = "idx:image_signals"
@@ -24,6 +25,18 @@ except:
   )
 
 app = FastAPI()
+
+# daemon thread
+def add_to_cache(query, json_results):
+  print("daemon is running")
+  pipeline = rd.pipeline()
+  for i, result in enumerate(json_results):
+    rd_key = f"{query}-{i}"
+    image_embedding = get_single_image_embedding(result['thumbnail_key'])
+    pipeline.json().set(rd_key, "$", result, nx=True)
+    pipeline.json().set(rd_key, "$.image_embedding", image_embedding)
+    pipeline.expire(rd_key, 2000)
+  pipeline.execute()
 
 # important functions
 @app.get("/")
@@ -47,7 +60,7 @@ def query_image(query):
   text_embedding = get_single_text_embedding(query)
 
   rd_query = (
-      Query("(*)=>[KNN 4 @image_embedding $query_vector AS score]")
+      Query("(*)=>[KNN 10 @image_embedding $query_vector AS score]")
       .sort_by("score", asc=True)
       .return_fields("score", "link", "thumbnail_key", "title")
       .dialect(2)
@@ -59,12 +72,11 @@ def query_image(query):
 
   search_docs = rd.ft(INDEX_NAME).search(rd_query, query_params).docs
 
-  if float(search_docs[-1]["score"]) < 0.8:
+  if len(search_docs) >= 10 and float(search_docs[-1]["score"]) < 0.8:
     print("cache hit")
     results = search_docs
   else:
     print("cache miss")
-    pipeline = rd.pipeline()
     params = {
       "engine": "google_images",
       "q": query,
@@ -73,14 +85,9 @@ def query_image(query):
     search = serpapi.search(params)
     results = []
     for i, result in enumerate(search["images_results"]):
-      rd_key = f"{query}-{i}"
       json_result = {"thumbnail_key": result['thumbnail'], "title": result['title'], "link": result['link']}
-      # shift to background process
-      image_embedding = get_single_image_embedding(result['thumbnail'])
-      pipeline.json().set(rd_key, "$", json_result, nx=True)
-      pipeline.json().set(rd_key, "$.image_embedding", image_embedding)
-      pipeline.expire(rd_key, 2000)
-      # these lines above
       results.append(json_result)
-    pipeline.execute()
+    daemon = Thread(target=add_to_cache, args=(query, results,))
+    daemon.setDaemon(True)
+    daemon.start()
   return results
