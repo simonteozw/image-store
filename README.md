@@ -17,4 +17,4 @@ Simple image serving site to learn about redis
 
 1. find top X similar embeddings [DONE]
 2. backend optimizations to shift long things to background processes [DONE]
-3. build simple frontend to display images
+3. build simple frontend to display images [DONE]
