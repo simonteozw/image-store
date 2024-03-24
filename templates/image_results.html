@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+
+{% block title %}
+  <title>Image Results</title>
+{% endblock %}
+
+{% block content %}
+  <div class="container", id="list_images"></div>
+  <script image_titles="{{image_titles}}" image_links="{{image_links}}" image_thumbnails="{{image_thumbnails}}">
+    image_thumbnails = document.currentScript.getAttribute('image_thumbnails').replace(/['"]+/g, '').slice(1,-1).split(",");
+    image_titles = document.currentScript.getAttribute('image_titles').replace(/['"]/g, '').slice(1,-1).split(",");
+    image_links = document.currentScript.getAttribute('image_links').replace(/['"]+/g, '').slice(1,-1).split(",");
+
+    var listDiv = document.getElementById('list_images');
+    var ul=document.createElement('ul');
+    ul.setAttribute('style', 'display:block;');
+    for (var i = 0; i < image_titles.length; ++i) {
+      var li = document.createElement('li')
+      var title=document.createElement('a');
+      title.innerHTML = image_titles[i];
+      title.setAttribute('href', image_links[i])
+      var thumbnail = document.createElement('img')
+      thumbnail.src = image_thumbnails[i]
+      li.appendChild(thumbnail)
+      li.appendChild(title);
+      ul.appendChild(li)
+    }
+    listDiv.appendChild(ul);
+  </script>
+{% endblock %}

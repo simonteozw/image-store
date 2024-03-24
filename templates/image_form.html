@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+
+{% block title %}
+  <title>Image Search</title>
+{% endblock %}
+
+{% block content %}
+  <div class="container">
+    <h1 class="display-4">Image Search</h1>
+    <form method="post">
+      <input name="query" type="text", placeholder="Enter your query here" />
+      <input type="submit" />
+    </form>
+  </div>
+{% endblock %}

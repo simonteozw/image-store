@@ -1,16 +1,23 @@
 import requests
 import redis
 import json
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Form
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import RedirectResponse
 import serpapi
 import numpy as np
 from redis.commands.search.query import Query
 from embeddings import get_model_info, get_single_text_embedding, get_single_image_embedding
 from schema import rd_schema, definition
 from threading import Thread
+import starlette.status as status
+
 
 # global constants
 INDEX_NAME = "idx:image_signals"
+CACHE_TTL = 10000
+SIMILARITY_THRESHOLD = 0.7 # lower is more similar
+templates = Jinja2Templates(directory="templates")
 
 # setup
 with open('private_info.json') as f:
@@ -35,26 +42,10 @@ def add_to_cache(query, json_results):
     image_embedding = get_single_image_embedding(result['thumbnail_key'])
     pipeline.json().set(rd_key, "$", result, nx=True)
     pipeline.json().set(rd_key, "$.image_embedding", image_embedding)
-    pipeline.expire(rd_key, 2000)
+    pipeline.expire(rd_key, CACHE_TTL)
   pipeline.execute()
 
 # important functions
-@app.get("/")
-def read_root():
-  info = rd.ft("idx:image_signals").info()
-  num_docs = info["num_docs"]
-  indexing_failures = info["hash_indexing_failures"]
-
-  return f"{num_docs} documents indexed with {indexing_failures} failures"
-
-# just for testing, will remove eventually
-@app.get("/text/{query}")
-def get_text_embedding(query):
-  e = get_single_text_embedding(query)
-  print(e)
-  print(e.shape)
-
-@app.get("/images/{query}")
 def query_image(query):
 
   text_embedding = get_single_text_embedding(query)
@@ -71,10 +62,13 @@ def query_image(query):
   }
 
   search_docs = rd.ft(INDEX_NAME).search(rd_query, query_params).docs
+  results = []
 
-  if len(search_docs) >= 10 and float(search_docs[-1]["score"]) < 0.8:
+  if len(search_docs) >= 10 and float(search_docs[-1]["score"]) < SIMILARITY_THRESHOLD:
     print("cache hit")
-    results = search_docs
+    for result in search_docs:
+      json_result = {"thumbnail_key": result['thumbnail_key'], "title": result['title'], "link": result['link']}
+      results.append(json_result)
   else:
     print("cache miss")
     params = {
@@ -83,11 +77,42 @@ def query_image(query):
       "api_key": data["serp_api_key"]
     }
     search = serpapi.search(params)
-    results = []
-    for i, result in enumerate(search["images_results"]):
+    for _, result in enumerate(search["images_results"]):
       json_result = {"thumbnail_key": result['thumbnail'], "title": result['title'], "link": result['link']}
       results.append(json_result)
     daemon = Thread(target=add_to_cache, args=(query, results,))
     daemon.setDaemon(True)
     daemon.start()
   return results
+
+# core functions
+@app.get("/")
+def read_root(request: Request):
+  info = rd.ft("idx:image_signals").info()
+  num_docs = info["num_docs"]
+  indexing_failures = info["hash_indexing_failures"]
+  return templates.TemplateResponse("index.html",{"request":request, "num_docs": num_docs, "indexing_failures": indexing_failures})
+
+@app.get("/image_search")
+def image_form(request: Request):
+  return templates.TemplateResponse("image_form.html",{"request":request})
+
+@app.post("/image_search", response_class=RedirectResponse)
+def redirect(request: Request, query: str = Form(...)):
+  redirect_url = request.url_for('search_images', **{ 'query' : query})
+  return RedirectResponse(redirect_url, status_code=status.HTTP_302_FOUND)
+  # image_results = query_image(query)
+  # return templates.TemplateResponse("image_results.html",{"request":request, "image_results": image_results})
+
+@app.get("/image_results/{query}")
+def search_images(request: Request, query):
+  image_results = query_image(query)
+  image_titles = []
+  image_links = []
+  image_thumbnails = []
+
+  for res in image_results:
+    image_titles.append(res['title'])
+    image_links.append(res['link'])
+    image_thumbnails.append(res['thumbnail_key'])
+  return templates.TemplateResponse("image_results.html",{"request":request, "image_titles": image_titles, "image_links": image_links, "image_thumbnails": image_thumbnails})
